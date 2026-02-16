@@ -114,7 +114,17 @@ do_watch() {
             if tmux has-session -t "$target" 2>/dev/null; then
                 echo "handy-to-tmux: [$target] $text"
                 tmux send-keys -t "$target" -l "$text"
-                tmux send-keys -t "$target" Enter
+                local submit_key="Enter"
+                local pane_tty
+                pane_tty=$(tmux display-message -p -t "$target" "#{pane_tty}" 2>/dev/null || true)
+
+                # Codex in tmux treats Enter from send-keys as a literal newline.
+                # Sending Tab queues/submits the message in Codex's composer.
+                if [[ -n "$pane_tty" ]] && ps -t "${pane_tty#/dev/}" -o comm= 2>/dev/null | grep -qx "codex"; then
+                    submit_key="Tab"
+                fi
+
+                tmux send-keys -t "$target" "$submit_key"
             fi
         done < <(sqlite3 "$DB" "SELECT id, transcription_text FROM transcription_history WHERE id > $last_id ORDER BY id ASC;")
     done
