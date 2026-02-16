@@ -1,0 +1,152 @@
+#!/usr/bin/env bash
+#
+# handy-to-tmux: Watches Handy's history DB for new transcriptions
+# and sends them to a tmux session.
+#
+# Usage:
+#   handy-to-tmux start            — start the watcher in the background
+#   handy-to-tmux stop             — stop the watcher
+#   handy-to-tmux status           — check if the watcher is running
+#   handy-to-tmux run              — run in foreground (for debugging)
+#   handy-to-tmux target <session> — set target tmux session and start recording
+#
+
+set -euo pipefail
+
+DB="$HOME/.local/share/com.pais.handy/history.db"
+DEFAULT_SESSION="handy"
+STATEDIR="$HOME/.local/state"
+PIDFILE="$STATEDIR/handy-to-tmux.pid"
+LOGFILE="$STATEDIR/handy-to-tmux.log"
+TARGETFILE="$STATEDIR/handy-to-tmux.target"
+POLL_INTERVAL=0.3
+DEBOUNCE_POLLS=5
+
+mkdir -p "$STATEDIR"
+
+is_running() {
+    [[ -f "$PIDFILE" ]] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null
+}
+
+do_stop() {
+    if is_running; then
+        local pid
+        pid=$(cat "$PIDFILE")
+        kill "$pid" 2>/dev/null
+        rm -f "$PIDFILE"
+        echo "handy-to-tmux: stopped (pid $pid)"
+    else
+        rm -f "$PIDFILE"
+        echo "handy-to-tmux: not running"
+    fi
+}
+
+do_status() {
+    if is_running; then
+        local target
+        target=$(cat "$TARGETFILE" 2>/dev/null || echo "$DEFAULT_SESSION")
+        echo "handy-to-tmux: running (pid $(cat "$PIDFILE"), target=$target)"
+    else
+        rm -f "$PIDFILE"
+        echo "handy-to-tmux: not running"
+    fi
+}
+
+get_target() {
+    if [[ -f "$TARGETFILE" ]]; then
+        cat "$TARGETFILE"
+    else
+        echo "$DEFAULT_SESSION"
+    fi
+}
+
+do_target() {
+    local session="${1:-}"
+    if [[ -z "$session" ]]; then
+        echo "Usage: handy-to-tmux target <session-name>" >&2
+        exit 1
+    fi
+
+    if ! tmux has-session -t "$session" 2>/dev/null; then
+        echo "handy-to-tmux: warning: tmux session '$session' does not exist" >&2
+    fi
+
+    echo "$session" > "$TARGETFILE"
+    echo "handy-to-tmux: target set to '$session'"
+
+    # Trigger Handy's transcribe shortcut (starts/stops toggle recording)
+    xdotool key ctrl+space
+}
+
+do_watch() {
+    if [[ ! -f "$DB" ]]; then
+        echo "Error: Handy database not found at $DB" >&2
+        exit 1
+    fi
+
+    local last_id pending_text="" quiet_polls=0 got_new
+    last_id=$(sqlite3 "$DB" "SELECT COALESCE(MAX(id), 0) FROM transcription_history;")
+    echo "handy-to-tmux: watching (last_id=$last_id, default_target=$DEFAULT_SESSION)"
+
+    while true; do
+        sleep "$POLL_INTERVAL"
+
+        local target
+        target=$(get_target)
+
+        if ! tmux has-session -t "$target" 2>/dev/null; then
+            # Still track new IDs so we don't replay old entries later
+            while IFS='|' read -r id text; do
+                [[ -z "$id" ]] && continue
+                last_id="$id"
+            done < <(sqlite3 "$DB" "SELECT id, transcription_text FROM transcription_history WHERE id > $last_id ORDER BY id ASC;")
+            pending_text=""
+            quiet_polls=0
+            continue
+        fi
+
+        got_new=false
+        while IFS='|' read -r id text; do
+            [[ -z "$id" ]] && continue
+            pending_text="$text"
+            last_id="$id"
+            got_new=true
+        done < <(sqlite3 "$DB" "SELECT id, transcription_text FROM transcription_history WHERE id > $last_id ORDER BY id ASC;")
+
+        if [[ "$got_new" == true ]]; then
+            quiet_polls=0
+        elif [[ -n "$pending_text" ]]; then
+            (( quiet_polls++ )) || true
+            if (( quiet_polls >= DEBOUNCE_POLLS )); then
+                echo "handy-to-tmux: [$target] $pending_text"
+                tmux send-keys -t "$target" -l "$pending_text"
+                pending_text=""
+                quiet_polls=0
+            fi
+        fi
+    done
+}
+
+do_start() {
+    if is_running; then
+        echo "handy-to-tmux: already running (pid $(cat "$PIDFILE"))"
+        return 0
+    fi
+
+    nohup "$0" run >> "$LOGFILE" 2>&1 &
+    local pid=$!
+    echo "$pid" > "$PIDFILE"
+    echo "handy-to-tmux: started (pid $pid, log $LOGFILE)"
+}
+
+case "${1:-start}" in
+    start)  do_start  ;;
+    stop)   do_stop   ;;
+    status) do_status ;;
+    run)    do_watch  ;;
+    target) do_target "${2:-}" ;;
+    *)
+        echo "Usage: handy-to-tmux {start|stop|status|target <session>|run}" >&2
+        exit 1
+        ;;
+esac
