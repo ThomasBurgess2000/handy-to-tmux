@@ -24,6 +24,18 @@ POLL_INTERVAL=0.3
 
 mkdir -p "$STATEDIR"
 
+send_handy_shortcut() {
+    local attempt
+    for attempt in 1 2 3; do
+        if xdotool key --clearmodifiers ctrl+space; then
+            return 0
+        fi
+        sleep 0.1
+    done
+    echo "handy-to-tmux: error: xdotool failed after 3 attempts" >&2
+    return 1
+}
+
 is_running() {
     [[ -f "$PIDFILE" ]] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null
 }
@@ -72,16 +84,21 @@ do_target() {
         exit 1
     fi
 
+    # Auto-start the watcher if it isn't running
+    if ! is_running; then
+        do_start
+    fi
+
     # If already recording to this session, stop recording instead
     if [[ -f "$RECORDINGFILE" ]] && [[ "$(cat "$TARGETFILE" 2>/dev/null)" == "$session" ]]; then
-        xdotool key ctrl+space
+        send_handy_shortcut
         rm -f "$RECORDINGFILE"
         echo "handy-to-tmux: stopped recording (target '$session')"
         return 0
     fi
 
     # Trigger Handy's transcribe shortcut first, then do bookkeeping
-    xdotool key ctrl+space
+    send_handy_shortcut
 
     if ! tmux has-session -t "$session" 2>/dev/null; then
         echo "handy-to-tmux: warning: tmux session '$session' does not exist" >&2
