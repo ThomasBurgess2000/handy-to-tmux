@@ -74,11 +74,14 @@ do_target() {
 
     # If already recording to this session, stop recording instead
     if [[ -f "$RECORDINGFILE" ]] && [[ "$(cat "$TARGETFILE" 2>/dev/null)" == "$session" ]]; then
+        xdotool key ctrl+space
         rm -f "$RECORDINGFILE"
         echo "handy-to-tmux: stopped recording (target '$session')"
-        xdotool key ctrl+space
         return 0
     fi
+
+    # Trigger Handy's transcribe shortcut first, then do bookkeeping
+    xdotool key ctrl+space
 
     if ! tmux has-session -t "$session" 2>/dev/null; then
         echo "handy-to-tmux: warning: tmux session '$session' does not exist" >&2
@@ -87,9 +90,6 @@ do_target() {
     echo "$session" > "$TARGETFILE"
     touch "$RECORDINGFILE"
     echo "handy-to-tmux: recording to '$session'"
-
-    # Trigger Handy's transcribe shortcut (starts/stops toggle recording)
-    xdotool key ctrl+space
 }
 
 do_watch() {
@@ -114,6 +114,7 @@ do_watch() {
             if tmux has-session -t "$target" 2>/dev/null; then
                 echo "handy-to-tmux: [$target] $text"
                 tmux send-keys -t "$target" -l "$text"
+                tmux send-keys -t "$target" Enter
             fi
         done < <(sqlite3 "$DB" "SELECT id, transcription_text FROM transcription_history WHERE id > $last_id ORDER BY id ASC;")
     done
