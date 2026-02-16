@@ -19,6 +19,7 @@ STATEDIR="$HOME/.local/state"
 PIDFILE="$STATEDIR/handy-to-tmux.pid"
 LOGFILE="$STATEDIR/handy-to-tmux.log"
 TARGETFILE="$STATEDIR/handy-to-tmux.target"
+RECORDINGFILE="$STATEDIR/handy-to-tmux.recording"
 POLL_INTERVAL=0.3
 
 mkdir -p "$STATEDIR"
@@ -32,19 +33,24 @@ do_stop() {
         local pid
         pid=$(cat "$PIDFILE")
         kill "$pid" 2>/dev/null
-        rm -f "$PIDFILE"
+        rm -f "$PIDFILE" "$RECORDINGFILE"
         echo "handy-to-tmux: stopped (pid $pid)"
     else
-        rm -f "$PIDFILE"
+        rm -f "$PIDFILE" "$RECORDINGFILE"
         echo "handy-to-tmux: not running"
     fi
 }
 
 do_status() {
     if is_running; then
-        local target
+        local target recording_status
         target=$(cat "$TARGETFILE" 2>/dev/null || echo "$DEFAULT_SESSION")
-        echo "handy-to-tmux: running (pid $(cat "$PIDFILE"), target=$target)"
+        if [[ -f "$RECORDINGFILE" ]]; then
+            recording_status="recording"
+        else
+            recording_status="idle"
+        fi
+        echo "handy-to-tmux: running (pid $(cat "$PIDFILE"), target=$target, $recording_status)"
     else
         rm -f "$PIDFILE"
         echo "handy-to-tmux: not running"
@@ -66,12 +72,21 @@ do_target() {
         exit 1
     fi
 
+    # If already recording to this session, stop recording instead
+    if [[ -f "$RECORDINGFILE" ]] && [[ "$(cat "$TARGETFILE" 2>/dev/null)" == "$session" ]]; then
+        rm -f "$RECORDINGFILE"
+        echo "handy-to-tmux: stopped recording (target '$session')"
+        xdotool key ctrl+space
+        return 0
+    fi
+
     if ! tmux has-session -t "$session" 2>/dev/null; then
         echo "handy-to-tmux: warning: tmux session '$session' does not exist" >&2
     fi
 
     echo "$session" > "$TARGETFILE"
-    echo "handy-to-tmux: target set to '$session'"
+    touch "$RECORDINGFILE"
+    echo "handy-to-tmux: recording to '$session'"
 
     # Trigger Handy's transcribe shortcut (starts/stops toggle recording)
     xdotool key ctrl+space
