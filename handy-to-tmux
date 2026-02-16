@@ -20,7 +20,6 @@ PIDFILE="$STATEDIR/handy-to-tmux.pid"
 LOGFILE="$STATEDIR/handy-to-tmux.log"
 TARGETFILE="$STATEDIR/handy-to-tmux.target"
 POLL_INTERVAL=0.3
-DEBOUNCE_POLLS=5
 
 mkdir -p "$STATEDIR"
 
@@ -84,7 +83,7 @@ do_watch() {
         exit 1
     fi
 
-    local last_id pending_text="" quiet_polls=0 got_new
+    local last_id
     last_id=$(sqlite3 "$DB" "SELECT COALESCE(MAX(id), 0) FROM transcription_history;")
     echo "handy-to-tmux: watching (last_id=$last_id, default_target=$DEFAULT_SESSION)"
 
@@ -94,36 +93,14 @@ do_watch() {
         local target
         target=$(get_target)
 
-        if ! tmux has-session -t "$target" 2>/dev/null; then
-            # Still track new IDs so we don't replay old entries later
-            while IFS='|' read -r id text; do
-                [[ -z "$id" ]] && continue
-                last_id="$id"
-            done < <(sqlite3 "$DB" "SELECT id, transcription_text FROM transcription_history WHERE id > $last_id ORDER BY id ASC;")
-            pending_text=""
-            quiet_polls=0
-            continue
-        fi
-
-        got_new=false
         while IFS='|' read -r id text; do
             [[ -z "$id" ]] && continue
-            pending_text="$text"
             last_id="$id"
-            got_new=true
-        done < <(sqlite3 "$DB" "SELECT id, transcription_text FROM transcription_history WHERE id > $last_id ORDER BY id ASC;")
-
-        if [[ "$got_new" == true ]]; then
-            quiet_polls=0
-        elif [[ -n "$pending_text" ]]; then
-            (( quiet_polls++ )) || true
-            if (( quiet_polls >= DEBOUNCE_POLLS )); then
-                echo "handy-to-tmux: [$target] $pending_text"
-                tmux send-keys -t "$target" -l "$pending_text"
-                pending_text=""
-                quiet_polls=0
+            if tmux has-session -t "$target" 2>/dev/null; then
+                echo "handy-to-tmux: [$target] $text"
+                tmux send-keys -t "$target" -l "$text"
             fi
-        fi
+        done < <(sqlite3 "$DB" "SELECT id, transcription_text FROM transcription_history WHERE id > $last_id ORDER BY id ASC;")
     done
 }
 

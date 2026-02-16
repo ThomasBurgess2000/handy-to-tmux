@@ -79,7 +79,7 @@ Settings file: `~/.local/share/com.pais.handy/settings_store.json`
 
 ## How it works
 
-Handy saves transcriptions to `~/.local/share/com.pais.handy/history.db`. The watcher polls this database every 300ms for new rows. When new entries appear, it debounces for ~1.5s (waiting for Handy's partial results to settle), then sends the final transcription to the target tmux session.
+Handy saves transcriptions to `~/.local/share/com.pais.handy/history.db`. The watcher polls this database every 300ms for new rows and immediately sends new transcriptions to the target tmux session.
 
 State files:
 - `~/.local/state/handy-to-tmux.pid` — pidfile (single-instance enforcement)
