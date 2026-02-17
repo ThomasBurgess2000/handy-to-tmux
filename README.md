@@ -71,7 +71,7 @@ To use with KDE global shortcuts, bind different key combos to different targets
 - `Ctrl+Alt+1` → `handy-to-tmux target handy`
 - `Ctrl+Alt+2` → `handy-to-tmux target code`
 
-Each shortcut starts recording and routes the result to its session. Press Ctrl+Space to stop recording.
+Each shortcut toggles recording for its session — press once to start, press again to stop.
 
 ## Handy settings
 
