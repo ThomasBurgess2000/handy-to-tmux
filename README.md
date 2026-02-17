@@ -4,6 +4,10 @@ Routes [Handy](https://github.com/cjpais/Handy) speech-to-text transcriptions to
 
 Handy is a local speech-to-text app that saves transcriptions to a SQLite database. This script watches that database and sends new transcriptions to a tmux session via `tmux send-keys`, so you can dictate into a terminal without switching focus.
 
+
+https://github.com/user-attachments/assets/aab67034-1353-4c91-abfe-ce3354f9262c
+
+
 ## Dependencies
 
 - [Handy](https://github.com/cjpais/Handy)
