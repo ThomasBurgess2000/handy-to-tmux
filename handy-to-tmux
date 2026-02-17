@@ -130,7 +130,10 @@ do_watch() {
             last_id="$id"
             if tmux has-session -t "$target" 2>/dev/null; then
                 echo "handy-to-tmux: [$target] $text"
-                tmux send-keys -t "$target" -l "$text"
+                if ! tmux send-keys -t "$target" -l "$text" 2>/dev/null; then
+                    echo "handy-to-tmux: error: failed to send text to [$target]" >&2
+                    continue
+                fi
                 local submit_key="Enter"
                 local pane_tty
                 pane_tty=$(tmux display-message -p -t "$target" "#{pane_tty}" 2>/dev/null || true)
@@ -141,7 +144,7 @@ do_watch() {
                     submit_key="Tab"
                 fi
 
-                tmux send-keys -t "$target" "$submit_key"
+                tmux send-keys -t "$target" "$submit_key" 2>/dev/null || true
             fi
         done < <(sqlite3 "$DB" "SELECT id, transcription_text FROM transcription_history WHERE id > $last_id ORDER BY id ASC;")
     done
